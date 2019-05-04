@@ -30,6 +30,7 @@
 
 #define FIELDS_VIEW 0
 #define BINARY_VIEW 1
+#define CMD_VIEW 2
 
 #define CLEAR_BIT 0
 #define SET_BIT 1
@@ -46,6 +47,7 @@ static char title[] = "Bitwise";
 static char *width_str;
 WINDOW *fields_win;
 WINDOW *binary_win;
+WINDOW *cmd_win;
 
 static FIELD *field[5];
 static FORM  *form;
@@ -71,6 +73,7 @@ static void position_binary_curser(int previous_pos, int next_pos);
 
 char binary_field[DBL_BINARY_WIN_LEN];
 int dec_pos, hex_pos, oct_pos;
+bool g_leave_req;
 static void set_fields_width(int width)
 {
 	int min_field_distance;
@@ -268,6 +271,7 @@ void process_binary(int ch)
 		position_binary_curser(bit_pos, tmp);
 		bit_pos = tmp;
 		break;
+
 	case KEY_RIGHT:
 	case 'l':
 		LOG("Key right\n");
@@ -336,6 +340,13 @@ void process_binary(int ch)
 		}
 		break;
 	}
+}
+
+void process_cmd(int ch)
+{
+	g_input = ch;
+	g_input_avail = true;
+	rl_callback_read_char();
 }
 
 void process_fields(int ch)
@@ -444,6 +455,8 @@ void paint_screen(void)
 	binary_win = newwin(4, binary_field_size, 8, 0);
 	box(binary_win, 0, 0);
 
+	cmd_win = newwin(1, COLS, LINES - 1, 0);
+
 	rc = set_form_win(form, fields_win);
 	if (rc != E_OK)
 		die("set_form_win failed\n");
@@ -464,6 +477,7 @@ void paint_screen(void)
 	mvwprintw(fields_win, 1, oct_pos + 2, "Octal:");
 
 	wrefresh(fields_win);
+	wrefresh(cmd_win);
 	update_binary();
 	update_fields(-1);
 	refresh();
@@ -483,6 +497,7 @@ void unpaint_screen(void)
 		free_field(field[i]);
 	delwin(fields_win);
 	delwin(binary_win);
+	delwin(cmd_win);
 	clear();
 	refresh();
 }
@@ -497,6 +512,7 @@ int start_interactive(uint64_t start)
 	fd = fopen("log.txt", "w");
 #endif
 	init_terminal();
+	init_readline();
 	refresh();
 
 	set_fields_width(g_width);
@@ -505,6 +521,17 @@ int start_interactive(uint64_t start)
 	while(true) {
 		ch = wgetch(fields_win);
 		LOG("ch= %d\n", ch);
+
+
+		if (view == CMD_VIEW) {
+			process_cmd(ch);
+			if (g_leave_req)
+				break;
+			else {
+				refresh();
+				continue;
+			}
+		}
 
 		switch (ch) {
 
@@ -538,10 +565,16 @@ int start_interactive(uint64_t start)
 			set_fields_width(64);
 			paint_screen();
 			break;
+		case ':':
+			view = CMD_VIEW;
+			keypad(stdscr, FALSE);
+
+			readline_redisplay();
+			break;
 		default:
 			if (view == BINARY_VIEW)
 				process_binary(ch);
-			else
+			else if (view == FIELDS_VIEW)
 				process_fields(ch);
 		}
 
@@ -553,6 +586,6 @@ exit:
 	fclose(fd);
 #endif
 	deinit_terminal();
-
+	deinit_readline();
 	return 0;
 }

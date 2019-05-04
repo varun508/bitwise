@@ -3,6 +3,7 @@
  */
 
 #include <ctype.h>
+#include <string.h>
 #include "bitwise.h"
 
 #define KB (1ULL << 10)
@@ -13,22 +14,87 @@
 
 int g_has_color = 1;
 int g_width = 0;
+bool g_input_avail;
+int g_input;
+
+static int readline_input_avail(void)
+{
+	return g_input_avail;
+}
+
+static int readline_getc(FILE *dummy)
+{
+	g_input_avail = false;
+	return g_input;
+}
+static void got_command(char *line)
+{
+	if (!line) {
+		/* Handle CTL-D */
+		g_leave_req = true;
+		return;
+	}
+
+	if (strcmp("q", line) == 0)
+	    g_leave_req = true;
+
+        if (*line)
+            add_history(line);
+
+	LOG("got command: %s\n", line);
+	free(line);
+}
+
+void readline_redisplay(void)
+{
+	size_t prompt_width = strlen(rl_display_prompt);
+	size_t cursor_col = prompt_width + strlen(rl_line_buffer);
+	werase(cmd_win);
+	mvwprintw(cmd_win, 0, 0, "%s%s", rl_display_prompt, rl_line_buffer);
+	wmove(cmd_win, 0, cursor_col);
+	curs_set(2);
+	wrefresh(cmd_win);
+//    cmd_win_redisplay(false);
+}
+
+
 void init_terminal(void)
 {
 	initscr();
-	if(has_colors() == FALSE)
+	if(has_colors() == FALSE) {
+		use_default_colors();
 		g_has_color = 0;
+	}
 	else
 		start_color();
 	cbreak();
 	noecho();
+	nonl();
 	keypad(stdscr, TRUE);
+	intrflush(NULL, FALSE);
 	curs_set(0);
 }
 
+void init_readline(void)
+{
+	rl_catch_signals = 0;
+	rl_catch_sigwinch = 0;
+	rl_change_environment = 0;
+	rl_getc_function = readline_getc;
+	rl_input_available_hook = readline_input_avail;
+	rl_redisplay_function = readline_redisplay;
+	rl_callback_handler_install(":", got_command);
+
+	rl_bind_key('\t', rl_insert);
+}
 void deinit_terminal(void)
 {
 	endwin();
+}
+
+void deinit_readline(void)
+{
+	rl_callback_handler_remove();
 }
 
 void die(const char *fmt, ...)
